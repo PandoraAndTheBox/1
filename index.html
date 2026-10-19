@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEKO-UNIT // 01 專注音樂播放器</title>
+    <!-- 引入 Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .font-mono-tech {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+        .tech-btn {
+            background: rgba(25, 30, 42, 0.6);
+            border: 1px solid rgba(148, 163, 184, 0.15);
+            transition: all 0.2s ease;
+        }
+        .tech-btn:hover {
+            background: rgba(237, 210, 110, 0.15);
+            border-color: rgba(237, 210, 110, 0.4);
+            color: #F3D87D;
+        }
+        .tech-btn.active-mode {
+            background: rgba(237, 210, 110, 0.2);
+            border-color: #EED26E;
+            color: #F3D87D;
+        }
+        @keyframes floatRobot {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-8px); }
+        }
+        .bot-floating {
+            animation: floatRobot 4s ease-in-out infinite;
+        }
+        .crt-scanlines {
+            background: linear-gradient(
+                rgba(18, 16, 16, 0) 50%, 
+                rgba(0, 0, 0, 0.25) 50%
+            );
+            background-size: 100% 4px;
+        }
+        
+        /* 介面顯隱控制樣式 */
+        .ui-hidden {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(-10px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+        .ui-visible {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateY(0px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+
+        .footer-hidden {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(10px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+        .footer-visible {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateY(0px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+        
+        /* 齒輪發光與普通狀態，以及位置切換動態 */
+        #settingsToggleBtn {
+            background: rgba(18, 21, 30, 0.7);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            box-shadow: none;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        #settingsToggleBtn:hover {
+            border-color: rgba(237, 210, 110, 0.5);
+            color: #F3D87D;
+        }
+        #settingsToggleBtn.gear-active {
+            background: rgba(237, 210, 110, 0.15);
+            border-color: #EED26E;
+            color: #F3D87D;
+            box-shadow: 0 0 15px rgba(237, 210, 110, 0.4), inset 0 0 5px rgba(237, 210, 110, 0.3);
+            top: 7rem;
+        }
+
+        /* 歌名跑馬燈動畫 */
+        @keyframes marquee {
+            0% { transform: translateX(0%); }
+            100% { transform: translateX(-50%); }
+        }
+        .animate-marquee {
+            display: inline-block;
+            white-space: nowrap;
+            animation: marquee 15s linear infinite;
+        }
+    </style>
+</head>
+<body class="bg-[#0B0D13] text-slate-100 min-h-screen flex flex-col justify-between selection:bg-[#EED26E] selection:text-black overflow-hidden relative">
+
+    <!-- YouTube 播放器容器 -->
+    <div id="youtubePlayerContainer" class="absolute opacity-0 pointer-events-none -top-[9999px] -left-[9999px] w-[200px] h-[200px] overflow-hidden"></div>
+
+    <!-- 右上角極簡科技齒輪按鈕 -->
+    <div class="fixed top-4 right-4 z-50">
+        <button id="settingsToggleBtn" class="relative p-2.5 rounded-xl text-slate-400 flex items-center justify-center backdrop-blur-md cursor-pointer" title="切換控制面板與設定">
+            <svg class="w-5 h-5 transition-transform duration-500 hover:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+        </button>
+    </div>
+
+    <!-- 頂部資訊列與完整控制面板 -->
+    <header id="mainHeader" class="ui-hidden absolute top-0 left-0 right-0 z-40 px-6 py-3 flex flex-col border-b border-slate-800/70 bg-[#12151E]/95 backdrop-blur-md gap-3">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/60 pb-2">
+            <div class="flex items-center space-x-3">
+                <div id="statusDot" class="w-2.5 h-2.5 rounded-full bg-[#EED26E] animate-pulse shadow-[0_0_8px_#EED26E]"></div>
+                <span class="font-mono-tech text-xs tracking-widest text-slate-300 font-semibold">NEKO-UNIT // 01</span>
+                <span id="exprBadge" class="text-[11px] font-mono-tech px-2 py-0.5 rounded bg-slate-800/80 text-slate-400 border border-slate-700/50">EXPR_01: PIXEL_RING_PERIOD (。)</span>
+            </div>
+
+            <div class="flex items-center space-x-5 font-mono-tech text-xs text-slate-400">
+                <div class="flex items-center space-x-1.5">
+                    <span class="text-slate-500">STATE:</span>
+                    <span id="hudState" class="text-[#EED26E] font-medium w-32 inline-block">IDLE_GAZE</span>
+                </div>
+                <div class="hidden lg:flex items-center space-x-1.5">
+                    <span class="text-slate-500">IDLE_SLEEP:</span>
+                    <span id="hudIdleTimer" class="text-slate-300 w-16 inline-block">03:00</span>
+                </div>
+                <div class="hidden md:flex items-center space-x-1.5">
+                    <span class="text-slate-500">NEXT_BLINK:</span>
+                    <span id="hudCountdown" class="text-slate-300 w-12 inline-block">3.2s</span>
+                </div>
+                <div class="hidden sm:flex items-center space-x-1.5">
+                    <span class="text-slate-500">OPENNESS:</span>
+                    <span id="hudSquash" class="text-slate-300 w-12 inline-block">100%</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex flex-col lg:flex-row items-center justify-between gap-3 pt-1">
+            <div class="flex items-center space-x-2 w-full lg:w-auto">
+                <span class="font-mono-tech text-[11px] text-slate-400 uppercase tracking-wider shrink-0">YT Playlist:</span>
+                <input id="playlistUrlInput" type="text" placeholder="請貼上 YouTube 播放清單網址 (list=...)" class="bg-[#0B0D13] border border-slate-700/60 rounded-xl px-3 py-1.5 text-xs text-slate-200 font-mono-tech w-full sm:w-72 focus:outline-none focus:border-[#EED26E]">
+                <button id="btnLoadPlaylist" class="tech-btn px-4 py-1.5 rounded-xl text-xs font-mono-tech text-[#F3D87D] border-[#EED26E]/40 bg-[#EED26E]/10 shrink-0">載入</button>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2 justify-end w-full lg:w-auto">
+                <button id="btnSingleBlink" class="tech-btn px-2.5 py-1.5 rounded-xl text-xs font-mono-tech text-slate-200">單次眨眼</button>
+                <button id="btnDoubleBlink" class="tech-btn px-2.5 py-1.5 rounded-xl text-xs font-mono-tech text-slate-200">連續眨兩下</button>
+                <button id="btnTestSleep" class="tech-btn px-2.5 py-1.5 rounded-xl text-xs font-mono-tech text-[#F3D87D] border-[#EED26E]/40 bg-[#EED26E]/10">測試入睡</button>
+                
+                <div class="flex items-center bg-[#0F121A] p-1 rounded-xl border border-slate-800 ml-2">
+                    <button id="speed1x" class="tech-btn active-mode px-2 py-1 rounded-lg text-xs font-mono-tech">1.0x</button>
+                    <button id="speedSlow" class="tech-btn px-2 py-1 rounded-lg text-xs font-mono-tech ml-1">0.25x</button>
+                </div>
+
+                <button id="btnToggleGaze" class="tech-btn active-mode px-2.5 py-1.5 rounded-xl text-xs font-mono-tech flex items-center space-x-1.5">
+                    <span id="gazeIndicator" class="w-2 h-2 rounded-full bg-[#EED26E]"></span>
+                    <span>視線追蹤</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 中央主要展示區：貓型機器人 -->
+    <main class="relative z-10 flex-1 flex flex-col items-center justify-center px-4 min-h-0 overflow-visible">
+        <div class="relative flex flex-col items-center justify-center">
+            <div id="robotFloatWrapper" class="bot-floating relative flex items-center justify-center">
+                <div id="robotContainer" class="relative w-[min(360px,54vh)] sm:w-[min(430px,56vh)] aspect-[500/410] flex items-center justify-center ceramic-body transition-transform duration-75">
+                    
+                    <canvas id="zzCanvas" class="pointer-events-none absolute -top-[28%] -left-[18%] w-[75%] h-[75%] z-40"></canvas>
+
+                    <svg class="w-full h-full overflow-visible" viewBox="0 0 500 410" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <defs>
+                            <linearGradient id="ceramicWhite" x1="250" y1="20" x2="250" y2="380" gradientUnits="userSpaceOnUse">
+                                <stop offset="0%" stop-color="#FFFFFF" />
+                                <stop offset="55%" stop-color="#EEF1F7" />
+                                <stop offset="88%" stop-color="#DAE0EC" />
+                                <stop offset="100%" stop-color="#C5CEDF" />
+                            </linearGradient>
+                            <linearGradient id="earGradient" x1="250" y1="18" x2="250" y2="115" gradientUnits="userSpaceOnUse">
+                                <stop offset="0%" stop-color="#FFFFFF" />
+                                <stop offset="75%" stop-color="#EEF1F7" />
+                                <stop offset="100%" stop-color="#DCE2EE" />
+                            </linearGradient>
+                            <linearGradient id="screenBezel" x1="250" y1="130" x2="250" y2="335" gradientUnits="userSpaceOnUse">
+                                <stop offset="0%" stop-color="#B8C2D4" />
+                                <stop offset="50%" stop-color="#D5DCE9" />
+                                <stop offset="100%" stop-color="#FFFFFF" />
+                            </linearGradient>
+                            <linearGradient id="earInnerAccent" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stop-color="#D7DFEE" stop-opacity="0.6" />
+                                <stop offset="100%" stop-color="#EFF2F9" stop-opacity="0.1" />
+                            </linearGradient>
+                        </defs>
+
+                        <g id="catEars">
+                            <path d="M 164 114 L 207 39.5 L 250 114 Z" fill="url(#earGradient)" stroke="url(#earGradient)" stroke-width="18" stroke-linejoin="round" />
+                            <path d="M 250 114 L 293 39.5 L 336 114 Z" fill="url(#earGradient)" stroke="url(#earGradient)" stroke-width="18" stroke-linejoin="round" />
+                            <path d="M 183 98 L 207 56 L 231 98 Z" fill="url(#earInnerAccent)" stroke="#CFD7E6" stroke-width="3" stroke-linejoin="round" opacity="0.55" />
+                            <path d="M 269 98 L 293 56 L 317 98 Z" fill="url(#earInnerAccent)" stroke="#CFD7E6" stroke-width="3" stroke-linejoin="round" opacity="0.55" />
+                            <line x1="250" y1="88" x2="250" y2="105" stroke="#CBD3E3" stroke-width="2" stroke-linecap="round" opacity="0.7" />
+                        </g>
+
+                        <ellipse cx="250" cy="234" rx="196" ry="138" fill="url(#ceramicWhite)" />
+                        <path d="M 95 168 A 178 118 0 0 1 405 168" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.85" />
+                        <path d="M 56 234 C 72 234, 82 234, 96 234" stroke="#BAC4D8" stroke-width="2" stroke-linecap="round" />
+                        <path d="M 404 234 C 418 234, 428 234, 444 234" stroke="#BAC4D8" stroke-width="2" stroke-linecap="round" />
+                        <circle cx="76" cy="218" r="2.5" fill="#B0BBD0" />
+                        <circle cx="424" cy="218" r="2.5" fill="#B0BBD0" />
+                        <ellipse cx="250" cy="236" rx="149" ry="97" fill="url(#screenBezel)" />
+                    </svg>
+
+                    <div id="faceScreen" class="absolute w-[57.5%] h-[45%] top-[34.7%] rounded-[50%] bg-[#0B0D13] overflow-hidden flex items-center justify-center shadow-[inset_0_8px_22px_rgba(0,0,0,0.95),inset_0_-3px_8px_rgba(255,255,255,0.06)] border border-[#1E2330] cursor-pointer">
+                        <canvas id="eyeCanvas" class="w-full h-full block relative z-10"></canvas>
+                        <div class="crt-scanlines pointer-events-none absolute inset-0 z-20 opacity-45"></div>
+                        <div class="pointer-events-none absolute -top-[35%] left-[10%] w-[80%] h-[65%] rounded-[50%] bg-gradient-to-b from-white/[0.07] to-transparent rotate-[-4deg] z-30"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="shadow-floating w-[200px] sm:w-[250px] h-[22px] rounded-[50%] bg-[#07090E] blur-md -mt-2"></div>
+        </div>
+    </main>
+
+    <!-- 底部極簡音樂播放欄位 -->
+    <footer id="musicPlayerFooter" class="footer-visible absolute bottom-0 left-0 right-0 z-30 px-4 pb-4 pt-1 flex justify-center">
+        <div class="w-full max-w-xl bg-[#161A25]/90 backdrop-blur-xl border border-slate-700/40 rounded-2xl p-3.5 shadow-2xl flex items-center justify-between gap-4">
+            
+            <div class="flex items-center space-x-3 overflow-hidden flex-1">
+                <div class="w-2.5 h-2.5 rounded-full bg-[#EED26E] animate-pulse shrink-0"></div>
+                <div class="overflow-hidden relative w-full">
+                    <div id="trackTitle" class="font-mono-tech text-xs text-slate-200 whitespace-nowrap animate-marquee">
+                        點擊右上角齒輪設定 YouTube 播放清單網址
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-2 shrink-0">
+                <button id="btnPrev" class="tech-btn p-2 rounded-xl text-slate-300" title="上一首">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" /></svg>
+                </button>
+
+                <button id="btnPlayPause" class="tech-btn px-3 py-2 rounded-xl text-xs font-mono-tech text-[#F3D87D] border-[#EED26E]/40 bg-[#EED26E]/10 flex items-center space-x-1">
+                    <span id="playPauseIcon">▶</span>
+                    <span id="playPauseText">播放</span>
+                </button>
+
+                <button id="btnNext" class="tech-btn p-2 rounded-xl text-slate-300" title="下一首">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" /></svg>
+                </button>
+
+                <div class="h-4 w-[1px] bg-slate-700 mx-1"></div>
+
+                <button id="btnRepeat" class="tech-btn px-2.5 py-1.5 rounded-xl text-[11px] font-mono-tech text-slate-400" title="單曲重複">
+                    單曲
+                </button>
+
+                <button id="btnLoop" class="tech-btn active-mode px-2.5 py-1.5 rounded-xl text-[11px] font-mono-tech" title="清單循環">
+                    循環
+                </button>
+
+                <button id="btnShuffle" class="tech-btn px-2.5 py-1.5 rounded-xl text-[11px] font-mono-tech text-slate-400" title="隨機播放">
+                    隨機
+                </button>
+            </div>
+        </div>
+    </footer>
+
+    <!-- YouTube IFrame API Script -->
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script>
+        let ytPlayer = null;
+        let playMode = 'loop';
+        let isPlaying = false;
+        let currentPlaylistId = '';
+
+        window.onYouTubeIframeAPIReady = function() {
+            ytPlayer = new YT.Player('youtubePlayerContainer', {
+                height: '200',
+                width: '200',
+                playerVars: { 
+                    'autoplay': 0, 
+                    'controls': 0,
+                    'enablejsapi': 1,
+                    'origin': window.location.origin
+                },
+                events: { 
+                    'onReady': onPlayerReady,
+                    'onStateChange': onPlayerStateChange,
+                    'onError': onPlayerError
+                }
+            });
+        };
+
+        function onPlayerReady(event) {
+            console.log("YouTube Player API 準備就緒");
+        }
+
+        function onPlayerError(event) {
+            console.error("YouTube 播放器錯誤代碼:", event.data);
+            document.getElementById('trackTitle').textContent = '載入錯誤，請確認播放清單網址是否正確或公開';
+        }
+
+        function onPlayerStateChange(event) {
+            const trackTitleElem = document.getElementById('trackTitle');
+            const playPauseIcon = document.getElementById('playPauseIcon');
+            const playPauseText = document.getElementById('playPauseText');
+
+            if (event.data === YT.PlayerState.PLAYING) {
+                isPlaying = true;
+                playPauseIcon.textContent = '❚❚';
+                playPauseText.textContent = '暫停';
+                try {
+                    const videoData = ytPlayer.getVideoData();
+                    if (videoData && videoData.title) {
+                        trackTitleElem.textContent = videoData.title;
+                    }
+                } catch(e) {
+                    trackTitleElem.textContent = '播放中 (無法讀取曲名)';
+                }
+            } else if (event.data === YT.PlayerState.PAUSED) {
+                isPlaying = false;
+                playPauseIcon.textContent = '▶';
+                playPauseText.textContent = '播放';
+            } else if (event.data === YT.PlayerState.ENDED) {
+                handleSongEnded();
+            }
+        }
+
+        function handleSongEnded() {
+            if (!ytPlayer) return;
+            if (playMode === 'repeat') {
+                ytPlayer.playVideo();
+            } else if (playMode === 'shuffle') {
+                const playlist = ytPlayer.getPlaylist ? ytPlayer.getPlaylist() : null;
+                const totalTracks = Array.isArray(playlist) ? playlist.length : 0;
+                if (totalTracks > 0) {
+                    const randomIndex = Math.floor(Math.random() * totalTracks);
+                    ytPlayer.playVideoAt(randomIndex);
+                } else {
+                    ytPlayer.nextVideo();
+                }
+            } else {
+                ytPlayer.nextVideo();
+            }
+        }
+
+        window.onload = function () {
+            const settingsToggleBtn = document.getElementById('settingsToggleBtn');
+            const mainHeader = document.getElementById('mainHeader');
+            const musicPlayerFooter = document.getElementById('musicPlayerFooter');
+            let isUiVisible = false;
+
+            settingsToggleBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                isUiVisible = !isUiVisible;
+                if (isUiVisible) {
+                    settingsToggleBtn.classList.add('gear-active');
+                    mainHeader.classList.replace('ui-hidden', 'ui-visible');
+                    musicPlayerFooter.classList.replace('footer-visible', 'footer-hidden');
+                } else {
+                    settingsToggleBtn.classList.remove('gear-active');
+                    mainHeader.classList.replace('ui-visible', 'ui-hidden');
+                    musicPlayerFooter.classList.replace('footer-hidden', 'footer-visible');
+                }
+            });
+
+            document.getElementById('btnLoadPlaylist').addEventListener('click', () => {
+                const urlInput = document.getElementById('playlistUrlInput').value.trim();
+                const listParamMatch = urlInput.match(/[?&]list=([^#\&\?]+)/);
+                if (listParamMatch && listParamMatch[1]) {
+                    currentPlaylistId = listParamMatch[1];
+                    if (ytPlayer && typeof ytPlayer.loadPlaylist === 'function') {
+                        document.getElementById('trackTitle').textContent = '正在載入 YouTube 播放清單...';
+                        
+                        ytPlayer.loadPlaylist({
+                            list: currentPlaylistId,
+                            listType: 'playlist',
+                            index: 0,
+                            suggestedQuality: 'small'
+                        });
+                        ytPlayer.playVideo();
+
+                        settingsToggleBtn.click();
+                    } else {
+                        alert('YouTube 播放器尚未初始化完成，請稍後再試。');
+                    }
+                } else {
+                    alert('無效的 YouTube 播放清單網址，請確認網址內包含 list= 參數。');
+                }
+            });
+
+            const btnPlayPause = document.getElementById('btnPlayPause');
+            const btnPrev = document.getElementById('btnPrev');
+            const btnNext = document.getElementById('btnNext');
+            const btnRepeat = document.getElementById('btnRepeat');
+            const btnLoop = document.getElementById('btnLoop');
+            const btnShuffle = document.getElementById('btnShuffle');
+
+            btnPlayPause.addEventListener('click', () => {
+                if (!ytPlayer) return;
+                if (isPlaying) ytPlayer.pauseVideo();
+                else ytPlayer.playVideo();
+            });
+
+            btnPrev.addEventListener('click', () => { if (ytPlayer && ytPlayer.previousVideo) ytPlayer.previousVideo(); });
+            btnNext.addEventListener('click', () => { if (ytPlayer && ytPlayer.nextVideo) ytPlayer.nextVideo(); });
+
+            function setPlayMode(mode) {
+                playMode = mode;
+                btnRepeat.classList.remove('active-mode', 'text-slate-400');
+                btnLoop.classList.remove('active-mode', 'text-slate-400');
+                btnShuffle.classList.remove('active-mode', 'text-slate-400');
+
+                btnRepeat.classList.add('text-slate-400');
+                btnLoop.classList.add('text-slate-400');
+                btnShuffle.classList.add('text-slate-400');
+
+                if (mode === 'repeat') {
+                    btnRepeat.classList.add('active-mode');
+                    btnRepeat.classList.remove('text-slate-400');
+                } else if (mode === 'loop') {
+                    btnLoop.classList.add('active-mode');
+                    btnLoop.classList.remove('text-slate-400');
+                } else if (mode === 'shuffle') {
+                    btnShuffle.classList.add('active-mode');
+                    btnShuffle.classList.remove('text-slate-400');
+                }
+            }
+
+            btnRepeat.addEventListener('click', () => setPlayMode('repeat'));
+            btnLoop.addEventListener('click', () => setPlayMode('loop'));
+            btnShuffle.addEventListener('click', () => setPlayMode('shuffle'));
+
+            // 機器人與畫布動畫核心
+            const canvas = document.getElementById('eyeCanvas');
+            const ctx = canvas.getContext('2d');
+            const zzCanvas = document.getElementById('zzCanvas');
+            const zzCtx = zzCanvas.getContext('2d');
+            const faceScreen = document.getElementById('faceScreen');
+            const robotContainer = document.getElementById('robotContainer');
+
+            const hudState = document.getElementById('hudState');
+            const hudIdleTimer = document.getElementById('hudIdleTimer');
+            const hudCountdown = document.getElementById('hudCountdown');
+            const hudSquash = document.getElementById('hudSquash');
+            const exprBadge = document.getElementById('exprBadge');
+
+            const RING_MATRIX_9x9 = [
+                [0, 0, 1, 1, 1, 1, 1, 0, 0],
+                [0, 1, 1, 0, 0, 0, 1, 1, 0],
+                [1, 1, 0, 0, 0, 0, 0, 1, 1],
+                [1, 0, 0, 0, 0, 0, 0, 0, 1],
+                [1, 0, 0, 0, 0, 0, 0, 0, 1],
+                [1, 0, 0, 0, 0, 0, 0, 0, 1],
+                [1, 1, 0, 0, 0, 0, 0, 1, 1],
+                [0, 1, 1, 0, 0, 0, 1, 1, 0],
+                [0, 0, 1, 1, 1, 1, 1, 0, 0]
+            ];
+
+            const pixelList = [];
+            for (let r = 0; r < 9; r++) {
+                for (let c = 0; c < 9; c++) {
+                    if (RING_MATRIX_9x9[r][c] === 1) pixelList.push({ gx: c - 4, gy: r - 4 });
+                }
+            }
+
+            const MATRIX_GREATER = [[1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 1, 0], [1, 0, 0]];
+            const MATRIX_LESS = [[0, 0, 1], [0, 1, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]];
+            const PIXEL_FONT_BIG_Z = [
+                [1, 1, 1, 1, 1, 1, 1],
+                [0, 0, 0, 0, 0, 1, 1],
+                [0, 0, 0, 0, 1, 1, 0],
+                [0, 0, 0, 1, 1, 0, 0],
+                [0, 0, 1, 1, 0, 0, 0],
+                [0, 1, 1, 0, 0, 0, 0],
+                [1, 1, 1, 1, 1, 1, 1]
+            ];
+            const PIXEL_FONT_SMALL_Z = [
+                [1, 1, 1, 1, 1],
+                [0, 0, 0, 1, 0],
+                [0, 0, 1, 0, 0],
+                [0, 1, 0, 0, 0],
+                [1, 1, 1, 1, 1]
+            ];
+            const PIXEL_FONT_HEART = [
+                [0, 1, 1, 0, 1, 1, 0],
+                [1, 1, 1, 1, 1, 1, 1],
+                [1, 1, 1, 1, 1, 1, 1],
+                [0, 1, 1, 1, 1, 1, 0],
+                [0, 0, 1, 1, 1, 0, 0],
+                [0, 0, 0, 1, 0, 0, 0]
+            ];
+
+            const IDLE_SLEEP_THRESHOLD_MS = 3 * 60 * 1000;
+            const state = {
+                timeScale: 1.0,
+                mouseTracking: true,
+                mode: 'AWAKE',
+                idleElapsedMs: 0,
+                sleepTransitionElapsed: 0,
+                sleepBreathingClock: 0,
+                wakeGraceTimestamp: 0,
+                excitedElapsed: 0,
+                nodOffsetY: 0,
+                nodRotateDeg: 0,
+                zzParticles: [],
+                heartParticles: [],
+                nextZzSpawnTimer: 0,
+                nextHeartSpawnTimer: 0,
+                isBlinking: false,
+                blinkType: 'single',
+                blinkElapsed: 0,
+                nextBlinkTimer: 2600,
+                eyeOpennessY: 1.0,
+                eyeStretchX: 1.0,
+                eyeGlowAlpha: 1.0,
+                sleepFloatY: 0,
+                gazeCurrentX: 0,
+                gazeCurrentY: 0,
+                gazeTargetX: 0,
+                gazeTargetY: 0
+            };
+
+            function triggerBlink(type = 'single') {
+                if (state.mode !== 'AWAKE') { wakeUpRobot(); return; }
+                state.isBlinking = true;
+                state.blinkType = type;
+                state.blinkElapsed = 0;
+            }
+
+            function startExcitedSequence() {
+                if (state.mode !== 'AWAKE') return;
+                state.mode = 'EXCITED';
+                state.excitedElapsed = 0;
+                state.isBlinking = false;
+                state.heartParticles = [];
+                exprBadge.textContent = 'EXPR_03: EXCITED_HEART (> < + ❤️)';
+                state.nextHeartSpawnTimer = 300;
+                spawnPixelHeartCluster();
+            }
+
+            function wakeUpRobot() {
+                state.idleElapsedMs = 0;
+                if (state.mode === 'AWAKE' || state.mode === 'WAKING_UP') return;
+                state.mode = 'WAKING_UP';
+                state.sleepTransitionElapsed = 0;
+                state.nodOffsetY = 0;
+                state.nodRotateDeg = 0;
+                robotContainer.style.transform = 'translateY(0px) rotate(0deg)';
+                exprBadge.textContent = 'EXPR_01: PIXEL_RING_PERIOD (。)';
+            }
+
+            function spawnPixelZzCluster() {
+                const w = zzCanvas.clientWidth || 300;
+                const h = zzCanvas.clientHeight || 250;
+                state.zzParticles.push({
+                    x: w * (0.56 + (Math.random() - 0.5) * 0.08),
+                    y: h * (0.64 + (Math.random() - 0.5) * 0.06),
+                    vx: -(18 + Math.random() * 14),
+                    vy: -(28 + Math.random() * 16),
+                    swayPhase: Math.random() * Math.PI * 2,
+                    swaySpeed: 2.0 + Math.random() * 1.5,
+                    swayAmp: 6 + Math.random() * 5,
+                    age: 0,
+                    maxLife: 2800 + Math.random() * 1100,
+                    scale: 0.85 + Math.random() * 0.25
+                });
+            }
+
+            function spawnPixelHeartCluster() {
+                const w = zzCanvas.clientWidth || 300;
+                const h = zzCanvas.clientHeight || 250;
+                state.heartParticles.push({
+                    x: w * (0.56 + (Math.random() - 0.5) * 0.08),
+                    y: h * (0.64 + (Math.random() - 0.5) * 0.06),
+                    vx: -(15 + Math.random() * 12),
+                    vy: -(32 + Math.random() * 18),
+                    swayPhase: Math.random() * Math.PI * 2,
+                    swaySpeed: 2.5 + Math.random() * 1.5,
+                    swayAmp: 8 + Math.random() * 6,
+                    age: 0,
+                    maxLife: 1600 + Math.random() * 400,
+                    scale: 0.9 + Math.random() * 0.3
+                });
+            }
+
+            function evaluateDrowsyNodding(elapsedMs) {
+                const totalDur = 2800;
+                const t = Math.min(1.0, elapsedMs / totalDur);
+                let opennessY = 1.0, stretchX = 1.0, nodY = 0, nodDeg = 0, statusText = 'DROWSY_NOD_1';
+
+                if (t < 0.38) {
+                    const p = t / 0.38;
+                    const ease = 0.5 - 0.5 * Math.cos(p * Math.PI);
+                    opennessY = 1.0 - ease * 0.78;
+                    stretchX = 1.0 + ease * 0.08;
+                    nodY = ease * 11;
+                    nodDeg = -ease * 1.8;
+                } else if (t < 0.56) {
+                    statusText = 'DROWSY_RECOVER';
+                    const p = (t - 0.38) / 0.18;
+                    const ease = Math.sin(p * Math.PI * 0.5);
+                    opennessY = 0.22 + ease * 0.36;
+                    stretchX = 1.08 - ease * 0.05;
+                    nodY = 11 - ease * 8;
+                    nodDeg = -1.8 + ease * 1.3;
+                } else {
+                    statusText = 'FALLING_ASLEEP';
+                    const p = (t - 0.56) / 0.44;
+                    const ease = p * p * (3 - 2 * p);
+                    opennessY = 0.58 * (1.0 - ease);
+                    stretchX = 1.03 + ease * 0.13;
+                    nodY = 3 + ease * 7;
+                    nodDeg = -0.5 - ease * 0.7;
+                }
+                return { done: t >= 1.0, opennessY, stretchX, nodY, nodDeg, statusText };
+            }
+
+            function resizeCanvas() {
+                const dpr = window.devicePixelRatio || 1;
+                const rect = faceScreen.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) {
+                    canvas.width = rect.width * dpr;
+                    canvas.height = rect.height * dpr;
+                    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                }
+
+                const zzRect = zzCanvas.getBoundingClientRect();
+                if (zzRect.width > 0 && zzRect.height > 0) {
+                    zzCanvas.width = zzRect.width * dpr;
+                    zzCanvas.height = zzRect.height * dpr;
+                    zzCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                }
+            }
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
+
+            window.addEventListener('mousemove', (e) => {
+                const now = performance.now();
+                if (now < state.wakeGraceTimestamp) return;
+                state.idleElapsedMs = 0;
+                if (state.mode === 'DROWSY_NODDING' || state.mode === 'SLEEPING') wakeUpRobot();
+                if (!state.mouseTracking || state.mode !== 'AWAKE') return;
+                const rect = faceScreen.getBoundingClientRect();
+                state.gazeTargetX = Math.max(-1, Math.min(1, (e.clientX - (rect.left + rect.width / 2)) / (window.innerWidth * 0.45))) * 14;
+                state.gazeTargetY = Math.max(-1, Math.min(1, (e.clientY - (rect.top + rect.height / 2)) / (window.innerHeight * 0.45))) * 9;
+            });
+
+            window.addEventListener('mousedown', () => { if (performance.now() >= state.wakeGraceTimestamp) wakeUpRobot(); });
+            window.addEventListener('keydown', () => { if (performance.now() >= state.wakeGraceTimestamp) wakeUpRobot(); });
+
+            faceScreen.addEventListener('click', (e) => {
+                e.stopPropagation();
+                startExcitedSequence();
+            });
+
+            document.getElementById('btnSingleBlink').addEventListener('click', () => triggerBlink('single'));
+            document.getElementById('btnDoubleBlink').addEventListener('click', () => triggerBlink('double'));
+            document.getElementById('btnTestSleep').addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (state.mode === 'DROWSY_NODDING' || state.mode === 'SLEEPING') return;
+                state.mode = 'DROWSY_NODDING';
+                state.sleepTransitionElapsed = 0;
+                state.wakeGraceTimestamp = performance.now() + 650;
+                exprBadge.textContent = 'EXPR_02: DROWSY_TO_SLEEP (— — + Zz)';
+            });
+
+            const btnSpeed1x = document.getElementById('speed1x');
+            const btnSpeedSlow = document.getElementById('speedSlow');
+            btnSpeed1x.addEventListener('click', () => { state.timeScale = 1.0; btnSpeed1x.classList.add('active-mode'); btnSpeedSlow.classList.remove('active-mode'); });
+            btnSpeedSlow.addEventListener('click', () => { state.timeScale = 0.25; btnSpeedSlow.classList.add('active-mode'); btnSpeed1x.classList.remove('active-mode'); });
+
+            const btnToggleGaze = document.getElementById('btnToggleGaze');
+            const gazeIndicator = document.getElementById('gazeIndicator');
+            btnToggleGaze.addEventListener('click', () => {
+                state.mouseTracking = !state.mouseTracking;
+                if (state.mouseTracking) {
+                    btnToggleGaze.classList.add('active-mode');
+                    gazeIndicator.classList.replace('bg-slate-500', 'bg-[#EED26E]');
+                } else {
+                    btnToggleGaze.classList.remove('active-mode');
+                    gazeIndicator.classList.replace('bg-[#EED26E]', 'bg-slate-500');
+                    state.gazeTargetX = 0; state.gazeTargetY = 0;
+                }
+            });
+
+            function formatIdleCountdown(remainingMs) {
+                const totalSec = Math.max(0, Math.ceil(remainingMs / 1000));
+                return `${String(Math.floor(totalSec / 60)).padStart(2, '0')}:${String(totalSec % 60).padStart(2, '0')}`;
+            }
+
+            let lastTime = performance.now();
+            function animateLoop(now) {
+                requestAnimationFrame(animateLoop);
+                const rawDt = Math.min(50, now - lastTime);
+                lastTime = now;
+                const dt = rawDt * state.timeScale;
+                let currentStatusText = 'IDLE_GAZE';
+
+                if (state.mode === 'AWAKE') {
+                    state.idleElapsedMs += rawDt;
+                    if (state.idleElapsedMs >= IDLE_SLEEP_THRESHOLD_MS) {
+                        state.mode = 'DROWSY_NODDING';
+                        state.sleepTransitionElapsed = 0;
+                    }
+
+                    state.eyeGlowAlpha = 1.0;
+                    state.sleepFloatY = 0;
+
+                    state.nextBlinkTimer -= rawDt;
+                    if (state.nextBlinkTimer <= 0) {
+                        // 隨機選擇單次眨眼 ('single') 或連續眨兩下 ('double')
+                        // 70% 機率單次，30% 機率連續兩下
+                        const randomBlinkType = Math.random() < 0.7 ? 'single' : 'double';
+                        triggerBlink(randomBlinkType);
+                        state.nextBlinkTimer = 2600 + Math.random() * 3000;
+                    }
+
+                    if (state.isBlinking) {
+                        state.blinkElapsed += dt;
+                        if (state.blinkType === 'single') {
+                            if (state.blinkElapsed < 150) {
+                                state.eyeOpennessY = 1.0 - (state.blinkElapsed / 150);
+                            } else if (state.blinkElapsed < 300) {
+                                state.eyeOpennessY = (state.blinkElapsed - 150) / 150;
+                            } else {
+                                state.isBlinking = false;
+                                state.eyeOpennessY = 1.0;
+                            }
+                        } else if (state.blinkType === 'double') {
+                            if (state.blinkElapsed < 120) {
+                                state.eyeOpennessY = 1.0 - (state.blinkElapsed / 120);
+                            } else if (state.blinkElapsed < 240) {
+                                state.eyeOpennessY = (state.blinkElapsed - 120) / 120;
+                            } else if (state.blinkElapsed < 360) {
+                                state.eyeOpennessY = 1.0 - ((state.blinkElapsed - 240) / 120);
+                            } else if (state.blinkElapsed < 480) {
+                                state.eyeOpennessY = (state.blinkElapsed - 360) / 120;
+                            } else {
+                                state.isBlinking = false;
+                                state.eyeOpennessY = 1.0;
+                            }
+                        }
+                    }
+
+                    state.gazeCurrentX += (state.gazeTargetX - state.gazeCurrentX) * 0.08;
+                    state.gazeCurrentY += (state.gazeTargetY - state.gazeCurrentY) * 0.08;
+
+                } else if (state.mode === 'DROWSY_NODDING') {
+                    state.sleepTransitionElapsed += dt;
+                    const nodResult = evaluateDrowsyNodding(state.sleepTransitionElapsed);
+                    state.eyeOpennessY = nodResult.opennessY;
+                    state.eyeStretchX = nodResult.stretchX;
+                    state.nodOffsetY = nodResult.nodY;
+                    state.nodRotateDeg = nodResult.nodDeg;
+                    currentStatusText = nodResult.statusText;
+
+                    state.gazeCurrentX += (0 - state.gazeCurrentX) * 0.06;
+                    state.gazeCurrentY += (6 - state.gazeCurrentY) * 0.06;
+                    robotContainer.style.transform = `translateY(${state.nodOffsetY.toFixed(2)}px) rotate(${state.nodRotateDeg.toFixed(2)}deg)`;
+
+                    if (nodResult.done) {
+                        state.mode = 'SLEEPING';
+                        state.sleepBreathingClock = 0;
+                        state.eyeOpennessY = 0.0;
+                        state.eyeStretchX = 1.16;
+                        spawnPixelZzCluster();
+                        state.nextZzSpawnTimer = 2000;
+                    }
+
+                } else if (state.mode === 'SLEEPING') {
+                    state.sleepBreathingClock += dt;
+                    currentStatusText = 'SLEEP_MODE (Zz)';
+                    const breathWave = Math.sin((state.sleepBreathingClock / 3600) * Math.PI * 2);
+                    state.eyeOpennessY = 0.0;
+                    state.eyeStretchX = 1.16 + breathWave * 0.03;
+                    state.sleepFloatY = breathWave * 4.5;
+                    state.eyeGlowAlpha = 0.72 + breathWave * 0.28;
+
+                    state.gazeCurrentX += (0 - state.gazeCurrentX) * 0.05;
+                    state.gazeCurrentY += (6 - state.gazeCurrentY) * 0.05;
+
+                    state.nextZzSpawnTimer -= dt;
+                    if (state.nextZzSpawnTimer <= 0) {
+                        spawnPixelZzCluster();
+                        state.nextZzSpawnTimer = 1700 + Math.random() * 2300;
+                    }
+
+                } else if (state.mode === 'WAKING_UP') {
+                    state.sleepTransitionElapsed += dt;
+                    const p = Math.min(1.0, state.sleepTransitionElapsed / 380);
+                    const spring = 1.0 - Math.exp(-4.0 * p) * Math.cos(2.2 * Math.PI * p);
+                    state.eyeOpennessY = Math.max(0, spring);
+                    state.eyeStretchX = 1.0 - (state.eyeOpennessY - 1.0) * 0.4;
+                    state.eyeGlowAlpha = 1.0;
+                    state.sleepFloatY = 0;
+                    currentStatusText = 'WAKING_UP!';
+
+                    if (p >= 1.0) {
+                        state.mode = 'AWAKE';
+                        state.eyeOpennessY = 1.0;
+                        state.eyeStretchX = 1.0;
+                        state.nextBlinkTimer = 2600;
+                    }
+
+                } else if (state.mode === 'EXCITED') {
+                    state.excitedElapsed += dt;
+                    currentStatusText = 'EXCITED_MODE (> <)';
+                    state.nextHeartSpawnTimer -= dt;
+                    if (state.nextHeartSpawnTimer <= 0) {
+                        spawnPixelHeartCluster();
+                        state.nextHeartSpawnTimer = 300;
+                    }
+                    if (state.excitedElapsed >= 1500) {
+                        state.mode = 'AWAKE';
+                        exprBadge.textContent = 'EXPR_01: PIXEL_RING_PERIOD (。)';
+                    }
+                }
+
+                hudState.textContent = currentStatusText;
+                if (state.mode === 'AWAKE') {
+                    hudIdleTimer.textContent = formatIdleCountdown(IDLE_SLEEP_THRESHOLD_MS - state.idleElapsedMs);
+                } else {
+                    hudIdleTimer.textContent = 'SLEEP';
+                }
+                hudSquash.textContent = Math.round(state.eyeOpennessY * 100) + '%';
+
+                const width = faceScreen.clientWidth;
+                const height = faceScreen.clientHeight;
+                if (width > 0 && height > 0) {
+                    ctx.clearRect(0, 0, width, height);
+
+                    const basePixelSize = Math.max(4, Math.min(8.5, width * 0.025));
+                    const baseGap = Math.max(1.5, basePixelSize * 0.28);
+                    const eyeSpacing = width * 0.23;
+                    const centerY = height * 0.5 + state.gazeCurrentY + state.sleepFloatY;
+
+                    if (state.mode === 'EXCITED') {
+                        drawSymbol(width * 0.5 - eyeSpacing + state.gazeCurrentX, centerY, MATRIX_GREATER, basePixelSize * 1.1, baseGap);
+                        drawSymbol(width * 0.5 + eyeSpacing + state.gazeCurrentX, centerY, MATRIX_LESS, basePixelSize * 1.1, baseGap);
+                    } else {
+                        drawPeriod(width * 0.5 - eyeSpacing + state.gazeCurrentX, centerY, basePixelSize, baseGap, state.eyeOpennessY, state.eyeStretchX, state.eyeGlowAlpha);
+                        drawPeriod(width * 0.5 + eyeSpacing + state.gazeCurrentX, centerY, basePixelSize, baseGap, state.eyeOpennessY, state.eyeStretchX, state.eyeGlowAlpha);
+                    }
+                }
+
+                if (zzCanvas.clientWidth > 0 && zzCanvas.clientHeight > 0) {
+                    zzCtx.clearRect(0, 0, zzCanvas.clientWidth, zzCanvas.clientHeight);
+                    const basePixel = Math.max(2.5, Math.min(4.2, zzCanvas.clientWidth * 0.013));
+                    const gap = Math.max(0.8, basePixel * 0.24);
+
+                    for (let i = state.zzParticles.length - 1; i >= 0; i--) {
+                        const p = state.zzParticles[i];
+                        p.age += dt;
+                        if (state.mode !== 'SLEEPING') p.age += dt * 3.5;
+                        if (p.age >= p.maxLife) { state.zzParticles.splice(i, 1); continue; }
+
+                        const lifeRatio = p.age / p.maxLife;
+                        p.x += p.vx * (dt / 1000);
+                        p.y += p.vy * (dt / 1000);
+                        const sway = Math.sin(lifeRatio * Math.PI * p.swaySpeed + p.swayPhase) * p.swayAmp;
+                        let alpha = lifeRatio < 0.18 ? lifeRatio / 0.18 : (lifeRatio > 0.55 ? 1.0 - (lifeRatio - 0.55) / 0.45 : 1.0);
+
+                        const pSize = basePixel * p.scale;
+                        zzCtx.save();
+                        zzCtx.fillStyle = '#F3D87D';
+                        zzCtx.shadowColor = 'rgba(243, 216, 125, 0.6)';
+                        zzCtx.shadowBlur = pSize * 1.6;
+                        zzCtx.globalAlpha = Math.max(0, Math.min(1, alpha));
+
+                        const drawX = p.x + sway;
+                        drawMatrixChar(zzCtx, PIXEL_FONT_BIG_Z, drawX, p.y, pSize, gap);
+                        drawMatrixChar(zzCtx, PIXEL_FONT_SMALL_Z, drawX + (pSize + gap) * 7.8, p.y - (pSize + gap) * 1.8, pSize * 0.88, gap * 0.88);
+                        zzCtx.restore();
+                    }
+
+                    for (let i = state.heartParticles.length - 1; i >= 0; i--) {
+                        const p = state.heartParticles[i];
+                        p.age += dt;
+                        if (state.mode !== 'EXCITED') p.age += dt * 3.5;
+                        if (p.age >= p.maxLife) { state.heartParticles.splice(i, 1); continue; }
+
+                        const lifeRatio = p.age / p.maxLife;
+                        p.x += p.vx * (dt / 1000);
+                        p.y += p.vy * (dt / 1000);
+                        const sway = Math.sin(lifeRatio * Math.PI * p.swaySpeed + p.swayPhase) * p.swayAmp;
+                        let alpha = lifeRatio < 0.15 ? lifeRatio / 0.15 : (lifeRatio > 0.6 ? 1.0 - (lifeRatio - 0.6) / 0.4 : 1.0);
+
+                        const pSize = basePixel * p.scale;
+                        zzCtx.save();
+                        const grad = zzCtx.createLinearGradient(0, 0, 0, pSize * 6);
+                        grad.addColorStop(0, '#FF69B4');
+                        grad.addColorStop(1, '#FF2244');
+                        zzCtx.fillStyle = grad;
+                        zzCtx.shadowColor = 'rgba(255, 105, 180, 0.7)';
+                        zzCtx.shadowBlur = pSize * 2;
+                        zzCtx.globalAlpha = Math.max(0, Math.min(1, alpha));
+
+                        drawMatrixChar(zzCtx, PIXEL_FONT_HEART, p.x + sway, p.y, pSize, gap);
+                        zzCtx.restore();
+                    }
+                }
+            }
+
+            function drawPeriod(cx, cy, pSize, pGap, openness, stretch, glowAlpha) {
+                const step = pSize + pGap;
+                const closedFactor = Math.max(0, Math.min(1, 1.0 - openness));
+                ctx.save();
+                ctx.fillStyle = '#F3D87D';
+                ctx.shadowColor = `rgba(243, 216, 125, ${0.55 * glowAlpha})`;
+                ctx.shadowBlur = pSize * (1.1 + 0.5 * glowAlpha);
+                for (let i = 0; i < pixelList.length; i++) {
+                    const px = pixelList[i];
+                    const x = cx + (px.gx * step * stretch);
+                    const y = cy + (px.gy * step * openness);
+                    const vRatio = Math.abs(px.gy) / 4.0;
+                    let sW = Math.max(2, pSize * (1.0 - closedFactor * vRatio * 0.35));
+                    let sH = Math.max(2, pSize * (1.0 - closedFactor * (0.36 + vRatio * 0.25)));
+                    ctx.globalAlpha = Math.max(0.18, Math.min(1.0, (1.0 - closedFactor * vRatio * 0.45) * glowAlpha));
+                    ctx.beginPath();
+                    ctx.roundRect(x - sW/2, y - sH/2, sW, sH, 1.5);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+
+            function drawSymbol(cx, cy, matrix, pSize, pGap) {
+                const rows = matrix.length;
+                const cols = matrix[0].length;
+                const step = pSize + pGap;
+                const totalW = cols * step;
+                const totalH = rows * step;
+                ctx.save();
+                ctx.fillStyle = '#F3D87D';
+                ctx.shadowColor = 'rgba(243, 216, 125, 0.7)';
+                ctx.shadowBlur = pSize * 1.4;
+                for (let r = 0; r < rows; r++) {
+                    for (let c = 0; c < cols; c++) {
+                        if (matrix[r][c] === 1) {
+                            ctx.beginPath();
+                            ctx.roundRect(cx - totalW/2 + c * step, cy - totalH/2 + r * step, pSize, pSize, 1);
+                            ctx.fill();
+                        }
+                    }
+                }
+                ctx.restore();
+            }
+
+            function drawMatrixChar(context, matrix, originX, originY, pSize, pGap) {
+                const rows = matrix.length;
+                const cols = matrix[0].length;
+                const step = pSize + pGap;
+                for (let r = 0; r < rows; r++) {
+                    for (let c = 0; c < cols; c++) {
+                        if (matrix[r][c] === 1) {
+                            context.beginPath();
+                            context.roundRect(originX + c * step, originY + r * step, pSize, pSize, 1);
+                            context.fill();
+                        }
+                    }
+                }
+            }
+
+            requestAnimationFrame(animateLoop);
+        };
+    </script>
+</body>
+</html>
